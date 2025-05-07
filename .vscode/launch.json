@@ -7,7 +7,7 @@
             "request": "launch",
             "program": "${fileDirname}/${fileBasenameNoExtension}",
             "args": [
-                "/Users/rishimaheshwari/Projects/ostep-projects/initial-utilities/wzip/tests/4.in"
+                "file_to_reverse.txt"
             ],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
