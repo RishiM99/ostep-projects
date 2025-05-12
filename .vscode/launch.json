@@ -7,17 +7,26 @@
             "request": "launch",
             "program": "${fileDirname}/${fileBasenameNoExtension}",
             "args": [
-                "file_to_reverse.txt"
             ],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],
-            "externalConsole": false,
-            "MIMode": "lldb",
+            "externalConsole": true,
+            "MIMode": "gdb",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Fork follows Child process",
+                    "text": "set follow-fork-mode child",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Fork will keep the other process attached to debugger",
+                    "text": "set detach-on-fork off",
                     "ignoreFailures": true
                 }
             ],

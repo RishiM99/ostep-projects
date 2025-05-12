@@ -37,7 +37,7 @@ int countTokens(char *line) {
 
 char** splitTokens(char *line) {
     int tokenCount = countTokens(line);
-    char** tokens = (char **) malloc(sizeof(char *) * tokenCount); 
+    char** tokens = (char **) malloc(sizeof(char *) * (tokenCount + 1)); 
     int tokenIndex = 0;
     int i = 0;
     while (i < strlen(line)) {
@@ -57,18 +57,30 @@ char** splitTokens(char *line) {
             i++;
         }
     }
+    tokens[tokenCount] = NULL;
     return tokens;
 }
 
 void processLine(char *line, size_t len) {
-    char *commandName = strsep(&line, " ");
-    if (strcmp(commandName, "exit") == 0 || strcmp(commandName, "cd") == 0 || strcmp(commandName, "path") == 0) {
-        // Built in command
-    } else {
-        while (line != NULL) {
-
+    int rc = fork(); 
+    if (rc < 0) {
+        // Fork failed
+        writeError(); 
+        exit(1);
+    } else if (rc == 0) {
+        // Child process
+        char **tokens = splitTokens(line);
+        char *commandName = tokens[0];
+        if (strcmp(commandName, "exit") == 0 || strcmp(commandName, "cd") == 0 || strcmp(commandName, "path") == 0) {
+            // Built in command
+        } else {
+            execv(commandName, tokens);
         }
+    } else {
+        // Parent process
+        wait(NULL);
     }
+
 }
 
 int main(int argc, char *argv[]) {  
@@ -83,7 +95,11 @@ int main(int argc, char *argv[]) {
                 writeError();
             }
 
+            printf("%s", line);
+
             processLine(line, len);
         }
     }
+
+    return 0;
 }
