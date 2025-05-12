@@ -80,7 +80,6 @@ void processLine(char *line, size_t len) {
         // Parent process
         wait(NULL);
     }
-
 }
 
 int main(int argc, char *argv[]) {  
