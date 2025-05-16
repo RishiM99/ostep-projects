@@ -6,7 +6,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-char *path = "/bin";
+char *initialPath = "/bin";
+char **paths = &initialPath;
+int numberOfPaths = 1;
 
 void writeError() {
     char error_message[30] = "An error has occurred\n";
@@ -41,9 +43,9 @@ char** splitTokens(char *line) {
     int tokenIndex = 0;
     int i = 0;
     while (i < strlen(line)) {
-        if (strncmp(line + i, " ", 1) != 0 && strncmp(line + i, "\t", 1) != 0) {
+        if (strncmp(line + i, " ", 1) != 0 && strncmp(line + i, "\t", 1) != 0 && strncmp(line + i, "\n", 1) != 0) {
             int j = i;
-            while (j < strlen(line) && strncmp(line + j, " ", 1) != 0 && strncmp(line + j, "\t", 1) != 0) {
+            while (j < strlen(line) && strncmp(line + j, " ", 1) != 0 && strncmp(line + j, "\t", 1) != 0 && strncmp(line + j, "\n", 1) != 0) {
                 j++;
             }
             int substringLength = j - i;
@@ -61,6 +63,18 @@ char** splitTokens(char *line) {
     return tokens;
 }
 
+char* getExecutableUsingPaths(char* commandName) {
+    for (int i = 0; i < numberOfPaths; i++) {
+        char* currentPathPlusCommand = strdup(paths[i]);
+        strcat(currentPathPlusCommand, "/");
+        strcat(currentPathPlusCommand, commandName);
+        if (access(currentPathPlusCommand, X_OK) == 0) {
+            return currentPathPlusCommand;
+        }
+    }
+    return NULL;
+}
+
 void processLine(char *line, size_t len) {
     int rc = fork(); 
     if (rc < 0) {
@@ -74,7 +88,13 @@ void processLine(char *line, size_t len) {
         if (strcmp(commandName, "exit") == 0 || strcmp(commandName, "cd") == 0 || strcmp(commandName, "path") == 0) {
             // Built in command
         } else {
-            execv(commandName, tokens);
+            char* executableWithPath = getExecutableUsingPaths(commandName);
+            if (executableWithPath == NULL) {
+                writeError();
+                exit(1);
+            }
+            tokens[0] = executableWithPath;
+            execv(executableWithPath, tokens);
         }
     } else {
         // Parent process
@@ -85,18 +105,26 @@ void processLine(char *line, size_t len) {
 int main(int argc, char *argv[]) {  
     // Interactive mode
     if (argc == 1) {
+        char *line = NULL;
+        size_t len = 0;
         while (true) {
-            printf("wish> ");
-            char *line = NULL;
-            size_t len = 0;
+            printf("wish> \n");
 
             if (getline(&line, &len, stdin) == -1) {
+                printf("ERROR AT GETLINE\n");
                 writeError();
+                exit(1);
             }
 
-            printf("%s", line);
+            printf("STARTED PROCESSLINE\n");
 
             processLine(line, len);
+
+            printf("FINISHED PROCESSLINE\n");
+
+            free(line);
+            line = NULL;
+            len = 0;
         }
     }
 
