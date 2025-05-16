@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 char *initialPath = "/bin";
 char **paths = &initialPath;
@@ -76,13 +77,15 @@ char* getExecutableUsingPaths(char* commandName) {
 }
 
 void processLine(char *line, size_t len) {
-    int rc = fork(); 
-    if (rc < 0) {
+    printf("Parent process start: %d\n", getpid());
+    pid_t childPID = fork(); 
+    if (childPID < 0) {
         // Fork failed
         writeError(); 
         exit(1);
-    } else if (rc == 0) {
+    } else if (childPID == 0) {
         // Child process
+        printf("Child process start: %d\n", getpid());
         char **tokens = splitTokens(line);
         char *commandName = tokens[0];
         if (strcmp(commandName, "exit") == 0 || strcmp(commandName, "cd") == 0 || strcmp(commandName, "path") == 0) {
@@ -98,17 +101,19 @@ void processLine(char *line, size_t len) {
         }
     } else {
         // Parent process
-        wait(NULL);
+        waitpid(childPID, NULL, 0);
+        printf("Parent process end: %d\n", getpid());
     }
 }
 
 int main(int argc, char *argv[]) {  
     // Interactive mode
     if (argc == 1) {
-        char *line = NULL;
-        size_t len = 0;
         while (true) {
-            printf("wish> \n");
+            char *line = NULL;
+            size_t len = 0;
+
+            printf("wish> ");
 
             if (getline(&line, &len, stdin) == -1) {
                 printf("ERROR AT GETLINE\n");
@@ -116,15 +121,9 @@ int main(int argc, char *argv[]) {
                 exit(1);
             }
 
-            printf("STARTED PROCESSLINE\n");
-
             processLine(line, len);
 
-            printf("FINISHED PROCESSLINE\n");
-
             free(line);
-            line = NULL;
-            len = 0;
         }
     }
 
