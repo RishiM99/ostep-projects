@@ -7,9 +7,13 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
-char *initialPath = "/bin";
-char **paths = &initialPath;
-int numberOfPaths = 1;
+char **paths;
+int numberOfPaths;
+
+enum ChildProcessExitStatus {
+    ERROR,
+    EXIT_PARENT_PROCESS,
+};
 
 void writeError() {
     char error_message[30] = "An error has occurred\n";
@@ -79,19 +83,24 @@ char** addNullToEndOfTokensList(char** tokens, int tokenCount) {
     return reallocedTokens;
 }
 
-void freeTokens(char** tokens, int tokenCount) {
-    for (int i = 0; i < tokenCount; i++) {
-        free(tokens[i]);
+void freeListOfStrings(char** strings, int stringCount) {
+    for (int i = 0; i < stringCount; i++) {
+        free(strings[i]);
     }
 
-    free(tokens);
+    free(strings);
 }
 
 char* getExecutableUsingPaths(char* commandName) {
+    printf("NUMBER OF PATHS: %d\n", numberOfPaths);
+    printf("HERE1\n");
     for (int i = 0; i < numberOfPaths; i++) {
+        printf("HERE2\n");
+        printf("CURRENT PATH: %s\n", paths[i]);
         char* currentPathPlusCommand = strdup(paths[i]);
         strcat(currentPathPlusCommand, "/");
         strcat(currentPathPlusCommand, commandName);
+        printf("CURRENT PATH PLUS COMMAND: %s\n", currentPathPlusCommand);
         if (access(currentPathPlusCommand, X_OK) == 0) {
             return currentPathPlusCommand;
         }
@@ -99,71 +108,99 @@ char* getExecutableUsingPaths(char* commandName) {
     return NULL;
 }
 
-void processLine(char *line, size_t len) {
-    int status;
-    printf("PARENT PID: %d\n", getpid());
-    pid_t childPID = fork(); 
-    if (childPID < 0) {
-        // Fork failed
-        writeError(); 
-        return;
-    } else if (childPID == 0) {
-        // Child process
-        printf("CHILD PID: %d\n", getpid());
-        int tokenCount = countTokens(line);
-        char **tokens = splitTokens(line, tokenCount);
-        if (tokens == NULL) {
-            return;
-        }
-        char *commandName = tokens[0];
-        if (strcmp(commandName, "exit") == 0 || strcmp(commandName, "cd") == 0 || strcmp(commandName, "path") == 0) {
-            // Built in command
-            if (strcmp(commandName, "exit") == 0) {
-                if (tokenCount > 1) {
-                    writeError();
-                    return;
-                }
-                printf("IN EXIT\n");
-                exit(0);
-            } else if (strcmp(commandName, "cd") == 0) {
-                if (tokenCount != 2) {
-                    writeError();
-                    return;
-                }
-                char* newDirectory = tokens[1];
-                int result = chdir(newDirectory);
-                if (result != 0) {
-                    writeError();
-                    return;
-                }
-            } else if (strcmp(commandName, "path") == 0) {
-                numberOfPaths = tokenCount - 1;
+char** duplicatePathsFromTokens(char** tokens, int numberOfPaths) {
+    char** duplicatedPaths = (char **) malloc(sizeof(char *) * numberOfPaths);
+    for (int i = 0; i < numberOfPaths; i++) {
+        duplicatedPaths[i] = strdup(tokens[i+1]);
+    }
+    return duplicatedPaths;
+}
 
-                if (numberOfPaths != 0) {
-                    paths = tokens + 1;
-                }
+void processLine(char *line, size_t len) {
+    printf("PARENT PID: %d\n", getpid());
+
+    int tokenCount = countTokens(line);
+    char **tokens = splitTokens(line, tokenCount);
+    if (tokens == NULL) {
+        return;
+    }
+    char *commandName = tokens[0];
+    if (strcmp(commandName, "exit") == 0 || strcmp(commandName, "cd") == 0 || strcmp(commandName, "path") == 0) {
+        // Built in command
+        if (strcmp(commandName, "exit") == 0) {
+            if (tokenCount > 1) {
+                writeError();
+                return;
             }
-        } else {
+            printf("IN EXIT\n");
+            exit(0);
+        } else if (strcmp(commandName, "cd") == 0) {
+            if (tokenCount != 2) {
+                writeError();
+                return;
+            }
+            char* newDirectory = tokens[1];
+            int result = chdir(newDirectory);
+            if (result != 0) {
+                writeError();
+                return;
+            }
+        } else if (strcmp(commandName, "path") == 0) {
+            if (numberOfPaths != 0) {
+                freeListOfStrings(paths, numberOfPaths);
+            }
+            numberOfPaths = tokenCount - 1;
+
+            if (numberOfPaths != 0) {
+                paths = duplicatePathsFromTokens(tokens, numberOfPaths);
+            } else {
+                paths = NULL;
+            }
+        }
+    } else {
+        pid_t childPID = fork(); 
+        if (childPID < 0) {
+            // Fork failed
+            writeError(); 
+            return;
+        } else if (childPID == 0) {
+            printf("CHILD PID: %d\n", getpid());
+            // Child Process
             char* executableWithPath = getExecutableUsingPaths(commandName);
             if (executableWithPath == NULL) {
                 writeError();
-                return;
+                exit(1);
             }
             tokens[0] = executableWithPath;
             tokens = addNullToEndOfTokensList(tokens, tokenCount);
             if (tokens == NULL) {
-                return;
+                writeError();
+                exit(1);
             }
             execv(executableWithPath, tokens);
+        } else {
+            // Parent Process
+            waitpid(childPID, NULL, 0);
+            printf("PARENT PID: %d\n", getpid());
         }
-        freeTokens(tokens, tokenCount);
-    } else {
-        // Parent process
-        waitpid(childPID, &status, 0);
     }
+
+    freeListOfStrings(tokens, tokenCount);
 }
 
 int main(int argc, char *argv[]) {  
+    char* initialPath = (char *) malloc(sizeof("/bin"));
+    if (initialPath == NULL) {
+        exit(1);
+    }
+    strncpy(initialPath, "/bin", sizeof("/bin"));
+    paths = (char **) malloc(sizeof(char **));
+    if (paths == NULL) {
+        exit(1);
+    }
+    paths[0] = initialPath;
+    numberOfPaths = 1;
+
     // Interactive mode
     if (argc == 1) {
         while (true) {
@@ -178,7 +215,6 @@ int main(int argc, char *argv[]) {
             }
 
             processLine(line, len);
-            printf("PID: %d\n", getpid());
 
             free(line);
         }
