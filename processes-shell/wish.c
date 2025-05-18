@@ -38,9 +38,12 @@ int countTokens(char *line) {
 }
 
 
-char** splitTokens(char *line) {
-    int tokenCount = countTokens(line);
-    char** tokens = (char **) malloc(sizeof(char *) * (tokenCount + 1)); 
+char** splitTokens(char *line, int tokenCount) {
+    char** tokens = (char **) malloc(sizeof(char *) * tokenCount); 
+    if (tokens == NULL) {
+        writeError();
+        return NULL;
+    }
     int tokenIndex = 0;
     int i = 0;
     while (i < strlen(line)) {
@@ -51,6 +54,10 @@ char** splitTokens(char *line) {
             }
             int substringLength = j - i;
             char *substring = (char *) malloc((substringLength + 1) * sizeof(char));
+            if (substring == NULL) {
+                writeError();
+                return NULL;
+            }
             strncpy(substring, line + i, substringLength);
             substring[substringLength] = '\0';
             tokens[tokenIndex] = substring;
@@ -60,8 +67,24 @@ char** splitTokens(char *line) {
             i++;
         }
     }
-    tokens[tokenCount] = NULL;
     return tokens;
+}
+
+char** addNullToEndOfTokensList(char** tokens, int tokenCount) {
+    char** reallocedTokens = (char **) realloc(tokens, sizeof(char *) * (tokenCount + 1));
+    if (reallocedTokens == NULL) {
+        writeError();
+        return NULL;
+    }
+    return reallocedTokens;
+}
+
+void freeTokens(char** tokens, int tokenCount) {
+    for (int i = 0; i < tokenCount; i++) {
+        free(tokens[i]);
+    }
+
+    free(tokens);
 }
 
 char* getExecutableUsingPaths(char* commandName) {
@@ -77,32 +100,66 @@ char* getExecutableUsingPaths(char* commandName) {
 }
 
 void processLine(char *line, size_t len) {
-    printf("Parent process start: %d\n", getpid());
+    int status;
+    printf("PARENT PID: %d\n", getpid());
     pid_t childPID = fork(); 
     if (childPID < 0) {
         // Fork failed
         writeError(); 
-        exit(1);
+        return;
     } else if (childPID == 0) {
         // Child process
-        printf("Child process start: %d\n", getpid());
-        char **tokens = splitTokens(line);
+        printf("CHILD PID: %d\n", getpid());
+        int tokenCount = countTokens(line);
+        char **tokens = splitTokens(line, tokenCount);
+        if (tokens == NULL) {
+            return;
+        }
         char *commandName = tokens[0];
         if (strcmp(commandName, "exit") == 0 || strcmp(commandName, "cd") == 0 || strcmp(commandName, "path") == 0) {
             // Built in command
+            if (strcmp(commandName, "exit") == 0) {
+                if (tokenCount > 1) {
+                    writeError();
+                    return;
+                }
+                printf("IN EXIT\n");
+                exit(0);
+            } else if (strcmp(commandName, "cd") == 0) {
+                if (tokenCount != 2) {
+                    writeError();
+                    return;
+                }
+                char* newDirectory = tokens[1];
+                int result = chdir(newDirectory);
+                if (result != 0) {
+                    writeError();
+                    return;
+                }
+            } else if (strcmp(commandName, "path") == 0) {
+                numberOfPaths = tokenCount - 1;
+
+                if (numberOfPaths != 0) {
+                    paths = tokens + 1;
+                }
+            }
         } else {
             char* executableWithPath = getExecutableUsingPaths(commandName);
             if (executableWithPath == NULL) {
                 writeError();
-                exit(1);
+                return;
             }
             tokens[0] = executableWithPath;
+            tokens = addNullToEndOfTokensList(tokens, tokenCount);
+            if (tokens == NULL) {
+                return;
+            }
             execv(executableWithPath, tokens);
         }
+        freeTokens(tokens, tokenCount);
     } else {
         // Parent process
-        waitpid(childPID, NULL, 0);
-        printf("Parent process end: %d\n", getpid());
+        waitpid(childPID, &status, 0);
     }
 }
 
@@ -118,13 +175,42 @@ int main(int argc, char *argv[]) {
             if (getline(&line, &len, stdin) == -1) {
                 printf("ERROR AT GETLINE\n");
                 writeError();
-                exit(1);
             }
 
             processLine(line, len);
+            printf("PID: %d\n", getpid());
 
             free(line);
         }
+    } else if (argc == 2) {
+        char* fileName = argv[1];
+        FILE* file = fopen(fileName, "r");
+
+        if (file == NULL) {
+            writeError();
+            exit(1);
+        }
+
+        char *line = NULL;
+        size_t len = 0;
+
+        while (getline(&line, &len, file) != -1) {
+            processLine(line, len);
+            free(line);
+            line = NULL;
+            len = 0;
+        }
+
+        if (ferror(file) != 0) {
+            fclose(file);
+            writeError();
+            exit(1);
+        }
+
+        fclose(file);
+    } else {
+        writeError();
+        exit(1);
     }
 
     return 0;
