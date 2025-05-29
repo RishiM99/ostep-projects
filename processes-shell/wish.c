@@ -288,6 +288,7 @@ void processLine(char* line, size_t len) {
         printf("WAIT FOR PID: %d", childProcessPIDs[i]);
         waitpid(childProcessPIDs[i], NULL, 0);
     }
+    
 
     free(commands);
     free(commandsSizes);
