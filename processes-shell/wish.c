@@ -125,11 +125,9 @@ char** duplicatePathsFromTokens(char** tokens, int numberOfPaths) {
     return duplicatedPaths;
 }
 
-void processLine(char *line, size_t len) {
+void processCommand(char** tokens, int tokenCount) {
     printf("PARENT PID: %d\n", getpid());
 
-    int tokenCount = countTokens(line);
-    char **tokens = splitTokens(line, tokenCount);
     if (tokens == NULL) {
         return;
     }
@@ -201,7 +199,6 @@ void processLine(char *line, size_t len) {
             tokens[0] = executableWithPath;
             tokens = addNullToEndOfTokensList(tokens, tokenCount);
             if (tokens == NULL) {
-                printf("TOKENS NULL\n");
                 writeError();
                 exit(1);
             }
@@ -214,6 +211,87 @@ void processLine(char *line, size_t len) {
     }
 
     freeListOfStrings(tokens, tokenCount);
+}
+
+void processLine(char* line, size_t len) {
+    // Generate list of commands, which are separated by &
+
+    int tokenCount = countTokens(line);
+    char **tokens = splitTokens(line, tokenCount);
+
+    int commandCount = 1;
+
+    for (int i = 0; i < tokenCount; i++) {
+        if (strcmp(tokens[i], "&") == 0) {
+            commandCount++;
+        }
+    }
+
+    char ***commands = (char ***) malloc(sizeof(char **) * commandCount);
+    int *commandsSizes = (int *) malloc(sizeof(int) * commandCount);
+    pid_t *childProcessPIDs = (pid_t *) malloc(sizeof(pid_t) * commandCount);
+
+    int start = 0;
+    int commands_idx = 0;
+
+    for (int i = 0; i < tokenCount; i++) {
+        if (strcmp(tokens[i], "&") == 0) {
+            char** command = (char **) malloc(sizeof(char *) * (i - start));
+            int command_idx = 0;
+            for (int j = start; j < i; j++) {
+                char* commandToken = (char *) malloc(sizeof(char) * (strlen(tokens[j]) + 1));
+                strncpy(commandToken, tokens[j], strlen(tokens[j]));
+                command[command_idx] = commandToken;
+                command_idx++;
+            }
+            commands[commands_idx] = command;
+            commandsSizes[commands_idx] = i - start;
+            commands_idx++;
+            start = i+1;
+        }
+    }
+
+    // Add last command
+    char** command = (char **) malloc(sizeof(char *) * (tokenCount - start));
+    int command_idx = 0;
+    for (int j = start; j < tokenCount; j++) {
+        char* commandToken = (char *) malloc(sizeof(char) * (strlen(tokens[j]) + 1));
+        strncpy(commandToken, tokens[j], strlen(tokens[j]));
+        command[command_idx] = commandToken;
+        command_idx++;
+    }
+    commands[commands_idx] = command;
+    commandsSizes[commands_idx] = tokenCount - start;
+
+    // Execute each command 
+
+    for (int i = 0; i < commandCount; i++) {
+        char** command = commands[i];
+        int commandSize = commandsSizes[i];
+        pid_t childPID = fork();
+
+        if (childPID < 0) {
+            // Fork failed
+            writeError();
+            return;
+        } else if (childPID == 0) {
+            // Child process
+            processCommand(command, commandSize);
+            exit(0);
+        } else {
+            // Parent process
+            childProcessPIDs[i] = childPID;
+        }
+    }
+
+    for (int i = 0; i < commandCount; i++) {
+        printf("WAIT FOR PID: %d", childProcessPIDs[i]);
+        waitpid(childProcessPIDs[i], NULL, 0);
+    }
+
+    free(commands);
+    free(commandsSizes);
+    free(childProcessPIDs);
 }
 
 int main(int argc, char *argv[]) {  
