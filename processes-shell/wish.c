@@ -108,6 +108,15 @@ char* getExecutableUsingPaths(char* commandName) {
     return NULL;
 }
 
+int getIndexOfRedirectOperator(char** tokens, int tokenCount) {
+    for (int i = 0; i < tokenCount; i++) {
+        if (strcmp(tokens[i], ">") == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 char** duplicatePathsFromTokens(char** tokens, int numberOfPaths) {
     char** duplicatedPaths = (char **) malloc(sizeof(char *) * numberOfPaths);
     for (int i = 0; i < numberOfPaths; i++) {
@@ -166,6 +175,24 @@ void processLine(char *line, size_t len) {
         } else if (childPID == 0) {
             printf("CHILD PID: %d\n", getpid());
             // Child Process
+            int indexOfRedirectOperator = getIndexOfRedirectOperator(tokens, tokenCount); 
+            if (indexOfRedirectOperator != -1) {
+                // Check if > is the second to last element. If not, incorrect redirection and error out.
+                if (indexOfRedirectOperator != tokenCount - 2) {
+                    writeError();
+                    exit(1);
+                }
+                char* redirectionFile = tokens[tokenCount - 1];
+                freopen(redirectionFile, "w", stdout);
+                freopen(redirectionFile, "w", stderr);
+                // Strip the " > filename" from end of tokens list.
+                tokens = (char **) realloc(tokens, sizeof(char *) * (tokenCount - 2));
+                if (tokens == NULL) {
+                    writeError();
+                    exit(1);
+                }
+                tokenCount = tokenCount - 2;
+            }
             char* executableWithPath = getExecutableUsingPaths(commandName);
             if (executableWithPath == NULL) {
                 writeError();
@@ -174,6 +201,7 @@ void processLine(char *line, size_t len) {
             tokens[0] = executableWithPath;
             tokens = addNullToEndOfTokensList(tokens, tokenCount);
             if (tokens == NULL) {
+                printf("TOKENS NULL\n");
                 writeError();
                 exit(1);
             }
